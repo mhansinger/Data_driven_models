@@ -1,0 +1,6 @@
+# gitignore
+
+*.hdf
+*.csv
+*.hdfs
+*.parquet
