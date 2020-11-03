@@ -13,24 +13,31 @@ import matplotlib.pyplot as plt
 import argparse
 
 
-def compose_db(case,test_train_set):
+def compose_db(case,train_test_set):
     '''
 
     :param case: UPRIMEXY case
-    :param test_train_set: test or train set
+    :param train_test_set: test or train set
     :return:
     '''
 
     path_to_data = '/media/max/HDD3/DNS_Data/Planar/NX512/'+case+'/postProcess_DNN/ALL'
 
     # read in the data as dask dataframe
-    data_pq = dd.read_parquet(join(path_to_data,'filter_width_*_DNN_'+case+'_'+test_train_set+'.parquet'),chunksize='2GB')
+    data_pq = dd.read_parquet(join(path_to_data,'filter_width_*_DNN_'+case+'_'+train_test_set+'.parquet'),chunksize='2GB')
     #data_pq = dd.read_parquet(join(path_to_data,'train_example_*.parquet'))
 
-    # now sample
-    files = 50
+    # no of output files
+    files = 30
 
-    data_pq=data_pq.sample(frac=0.5).astype(np.float32)
+    # remove columns which are not used for training as they have spatial information (direction)
+    columns_to_remove=['U_bar', 'V_bar', 'W_bar','grad_c_x_LES', 'grad_c_y_LES', 'grad_c_z_LES', 'grad_U_x_LES',
+       'grad_V_x_LES', 'grad_W_x_LES', 'grad_U_y_LES', 'grad_V_y_LES',
+       'grad_W_y_LES', 'grad_U_z_LES', 'grad_V_z_LES', 'grad_W_z_LES']
+
+    data_pq=data_pq.drop(columns_to_remove,axis=1).astype(np.float32)
+
+    # remove values where omega
 
     # get the mean and STD of the dataset
     data_mean, data_std = dask.compute(data_pq.mean(),data_pq.std())
@@ -40,8 +47,12 @@ def compose_db(case,test_train_set):
     moments['std'] = data_std
 
     # write down moments file
-    moments.to_csv(join(path_to_data,'moments_'+case+'.csv'))
-    print('moments are written.')
+    if train_test_set=='train':
+        print('\nComputing moments...')
+        moments.to_csv(join(path_to_data,'moments_'+case+'.csv'))
+        print('Moments are written.')
+    else:
+        print('\nNo moments computed for test set ...')
 
     for i in tqdm(range(1,files+1),desc='Computing ...',ncols=75):
 
@@ -54,7 +65,7 @@ def compose_db(case,test_train_set):
         data_df = data_df.sample(frac=1.0).astype(np.float32).drop('Unnamed: 0',axis=1)
 
         # write the data base
-        filename=join(path_to_data,test_train_set+'_'+case+'_'+str(i))
+        filename=join(path_to_data,train_test_set+'_'+case+'_'+str(i))
 
         ## PARQUET
         data_df.to_parquet(filename+'.parquet')
@@ -79,10 +90,10 @@ def compose_db(case,test_train_set):
 
 if __name__ == '__main__':
 
-    parser = argparse.ArgumentParser(description="case: UPRIME5, UPRIME75 .., test_train_set: train or test")
-    parser.add_argument('--test_train_set',type=str)
+    parser = argparse.ArgumentParser(description="case: UPRIME5, UPRIME75 .., train_test_set: train or test")
+    parser.add_argument('--train_test_set',type=str)
     parser.add_argument('--case',type=str)
     args = parser.parse_args()
 
     # run the function
-    compose_db(args.case,args.test_train_set)
+    compose_db(args.case,args.train_test_set)
