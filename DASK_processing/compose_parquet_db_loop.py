@@ -28,7 +28,11 @@ def compose_db(case,train_test_set):
     #data_pq = dd.read_parquet(join(path_to_data,'train_example_*.parquet'))
 
     # no of output files
-    files = 30
+
+    if train_test_set=='test':
+        files = 1
+    else:
+        files = 10
 
     # remove columns which are not used for training as they have spatial information (direction)
     columns_to_remove=['U_bar', 'V_bar', 'W_bar','grad_c_x_LES', 'grad_c_y_LES', 'grad_c_z_LES', 'grad_U_x_LES',
