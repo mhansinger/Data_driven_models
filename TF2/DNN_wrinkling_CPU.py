@@ -18,7 +18,6 @@ from utils.normalize_data import normalizeStandard, reTransformStandard
 from utils.resBlock import res_block_org
 
 
-
 '''
 This is to train the Network for various Delta_LES
 '''
@@ -38,6 +37,14 @@ This is to train the Network for various Delta_LES
 #CASE and parameters
 ##################################
 
+# switch off GPU
+os.environ['CUDA_VISIBLE_DEVICES']="-1"
+
+# DISTRIBUTED
+strategy = tf.distribute.MirroredStrategy()
+print('Number of devices: {}'.format(strategy.num_replicas_in_sync))
+
+
 CASE = 'UPRIME5'
 
 BATCH_SIZE = 64#128
@@ -49,12 +56,12 @@ RES_BLOCKS =10
 ##################################
 
 # path to the UPRIMEXY data set
-path_to_data = '/media/max/HDD3/DNS_Data/Planar/NX512/'+CASE+'/postProcess_DNN/ALL'
+path_to_data = '/home/hansinger/hansinger_share/'+CASE
 
 # read in the moments (mean and std of the data set
 moments = pd.read_csv(join(path_to_data,'moments_'+CASE+'.csv'),index_col=0)
 
-DNN_model_path = join('/home/max/Python/Data_driven_models/TF2/trained_models/DNN_'+CASE+'_nrns_'+str(NEURONS)+'_blks_'+str(RES_BLOCKS)+'.h5')
+DNN_model_path = join('/home/hansinger/hansinger_share/DNN_'+CASE+'_nrns_'+str(NEURONS)+'_blks_'+str(RES_BLOCKS)+'.h5')
 #join(path_to_data,'DNN_'+CASE+'_nrns_'+str(NEURONS)+'_blks_'+str(RES_BLOCKS)+'.h5')
 
 ###################################
@@ -108,22 +115,24 @@ number_datapoints = tf.data.experimental.cardinality(validation_dataset).numpy()
 # function to compile a model
 def compiled_model(dim_input=len(FEATURES),dim_output=len(TARGET),neurons=NEURONS,blocks=RES_BLOCKS,loss='mse'):
 
-    inputs = tf.keras.layers.Input(shape=(dim_input,),name='Input')
-    x = tf.keras.layers.Dense(neurons, activation='relu')(inputs)
-    for b in range(1,blocks+1):
-        x = res_block_org(x,neurons,block=str(b))
+    # DISTRIBUTED
+    with strategy.scope():
+        inputs = tf.keras.layers.Input(shape=(dim_input,),name='Input')
+        x = tf.keras.layers.Dense(neurons, activation='relu')(inputs)
+        for b in range(1,blocks+1):
+            x = res_block_org(x,neurons,block=str(b))
 
-    # add a droput layer
-    x = tf.keras.layers.Dropout(rate=0.2)(x)
-    # add another bypass layer
-    x = tf.keras.layers.Dense(dim_input,activation='relu')(x)
-    x = tf.keras.layers.add([x, inputs],name='add_layers')
-    # x = tf.keras.Activation('relu')(x)
-    output = tf.keras.layers.Dense(dim_output,activation='linear', name='prediction_layer')(x)
-    model = tf.keras.Model(inputs=inputs,outputs=output)
+        # add a droput layer
+        x = tf.keras.layers.Dropout(rate=0.2)(x)
+        # add another bypass layer
+        x = tf.keras.layers.Dense(dim_input,activation='relu')(x)
+        x = tf.keras.layers.add([x, inputs],name='add_layers')
+        # x = tf.keras.Activation('relu')(x)
+        output = tf.keras.layers.Dense(dim_output,activation='linear', name='prediction_layer')(x)
+        model = tf.keras.Model(inputs=inputs,outputs=output)
 
-    #compile model
-    model.compile(loss=loss, optimizer=tf.keras.optimizers.Adam(learning_rate=0.001), metrics=[loss])
+        #compile model
+        model.compile(loss=loss, optimizer=tf.keras.optimizers.Adam(learning_rate=0.001), metrics=[loss])
 
     return model
 
