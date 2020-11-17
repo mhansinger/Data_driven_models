@@ -1,6 +1,7 @@
 
 from typing import List
 
+import random
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -14,7 +15,7 @@ from sklearn.model_selection import train_test_split
 from utils.customObjects import coeff_r2, SGDRScheduler
 from tensorflow.keras.callbacks import ModelCheckpoint, LearningRateScheduler
 
-from utils.normalize_data import normalizeStandard, reTransformStandard
+from utils.normalize_data import normalizeStandard, reTransformStandard, reTransformTarget
 from utils.resBlock import res_block_org
 
 
@@ -47,9 +48,11 @@ print('Number of devices: {}'.format(strategy.num_replicas_in_sync))
 
 CASE = 'UPRIME5'
 
-BATCH_SIZE = 32#64#128
-NEURONS = 100
+BATCH_SIZE = 32000#64#128
+NEURONS = 102
 RES_BLOCKS =10
+EPOCHS=100
+LOSS='mae' #'mse'
 
 ##################################
 # PATHS
@@ -121,7 +124,7 @@ lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
 adam_optimizer = tf.keras.optimizers.Adam(learning_rate=lr_schedule)
 
 # function to compile a model
-def compiled_model(dim_input=len(FEATURES),dim_output=len(TARGET),neurons=NEURONS,blocks=RES_BLOCKS,loss='mse'):
+def compiled_model(dim_input=len(FEATURES),dim_output=len(TARGET),neurons=NEURONS,blocks=RES_BLOCKS,loss=LOSS):
 
     # DISTRIBUTED
     with strategy.scope():
@@ -252,13 +255,47 @@ for file_name in training_files:
     # SAVE model
     DNN.save(DNN_model_path,save_format='h5')
 
-    plt.figure()
-    plt.plot(history.history['loss'])
-    plt.plot(history.history['val_loss'])
-    plt.show(block=False)
+    # plt.figure()
+    # plt.plot(history.history['loss'])
+    # plt.plot(history.history['val_loss'])
+    # plt.show(block=False)
 
 
-#
+print('\n##############################')
+print('Predict on test set')
+print('##############################\n')
+
+# load test set
+test_files = os.listdir(join(path_to_data,'TEST'))
+test_files = [f for f in test_files if (f.startswith('test') and f.endswith('parquet'))]
+# shuffle the test_files list
+random.shuffle(test_files)
+
+test_df = pd.read_parquet(test_files[0])
+
+test_df_norm = normalizeStandard(test_df,moments)
+
+# predict y_hat
+y_hat = DNN.predict(test_df_norm[FEATURES])
+
+omega_DNS_predict = reTransformTarget(y_hat,moments)
+
+# plot the results
+plt.figure()
+plt.scatter(test_df['c_bar'],test_df['omega_DNS_filtered'],s=0.3,c='b')
+plt.scatter(test_df['c_bar'],omega_DNS_predict,s=0.3,c='r')
+plt.scatter(test_df['c_bar'],test_df['omega_model_planar'],s=0.3,c='k')
+plt.xlabel('c_bar')
+plt.ylabel('omega')
+plt.show(block=False)
+
+plt.figure()
+plt.scatter(test_df['omega_DNS_filtered'],omega_DNS_predict,s=0.3)
+plt.plot([0,1],[0,1],'k')
+plt.xlabel('true omega_DNS_filtered')
+plt.ylabel('predicted omega_DNS_filtered')
+plt.show(block=False)
+
 #
 # y_pred = DNN.predict(X_test,batch_size=64)
 #
