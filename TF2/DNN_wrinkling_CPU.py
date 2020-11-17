@@ -78,6 +78,7 @@ TARGET: List[str] = ['omega_DNS_filtered']
 
 training_files = os.listdir(join(path_to_data,'TRAIN'))
 training_files = [f for f in training_files if (f.startswith('train') and f.endswith('parquet'))]
+random.shuffle(training_files)
 
 print('Training files: ',training_files)
 
@@ -178,7 +179,7 @@ else:
                          dim_output=len(TARGET),
                          neurons=NEURONS,
                          blocks=RES_BLOCKS,
-                         loss='mse')
+                         loss=LOSS)
 
 
 ##################################
