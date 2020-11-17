@@ -1,6 +1,6 @@
 #join the single parquet files to one large DB for the training
 
-# this works: Oct 2020data_d    
+# this works: Oct 2020
 
 import numpy as np
 import dask.dataframe as dd
@@ -13,11 +13,12 @@ import matplotlib.pyplot as plt
 import argparse
 
 
-def compose_db(case,train_test_set):
+def compose_db(case,train_test_set,scaler):
     '''
 
     :param case: UPRIMEXY case
     :param train_test_set: test or train set
+    :param scaler: Standard, or Log and Standard scaler
     :return:
     '''
 
@@ -41,7 +42,10 @@ def compose_db(case,train_test_set):
 
     data_pq=data_pq.drop(columns_to_remove,axis=1).astype(np.float32)
 
-    # remove values where omega
+    # check if Log scaler
+    if scaler=='Log':
+        print('\nApplying Log Transformation to the data set')
+        data_pq = data_pq.apply(np.log,axis=1)
 
     # get the mean and STD of the dataset
     data_mean, data_std = dask.compute(data_pq.mean(),data_pq.std())
@@ -52,8 +56,12 @@ def compose_db(case,train_test_set):
 
     # write down moments file
     if train_test_set=='train':
-        print('\nComputing moments...')
-        moments.to_csv(join(path_to_data,'moments_'+case+'.csv'))
+        if scaler=='Log':
+            print('\nComputing moments for Log transformed...')
+            moments.to_csv(join(path_to_data, 'moments_' + case + '_Log.csv'))
+        elif scaler == 'Standard':
+            print('\nComputing moments for Standard Scaler...')
+            moments.to_csv(join(path_to_data, 'moments_' + case + '.csv'))
         print('Moments are written.')
     else:
         print('\nNo moments computed for test set ...')
@@ -72,19 +80,10 @@ def compose_db(case,train_test_set):
         filename=join(path_to_data,train_test_set+'_'+case+'_'+str(i))
 
         ## PARQUET
-        data_df.to_parquet(filename+'.parquet')
-
-        # ## PICKLE
-        # data_pq.to_pickle(filename + '.pickle')
-        #
-        # ## PICKLE
-        # data_pq.to_csv(filename + '.csv')
-        #
-        # ## HDF
-        # data_pq.to_hdf(filename + '.hdf',key='data')
-
-        #plt.scatter(data_df.c_bar,data_df.omega_DNS_filtered,s=0.5)
-        #print(data_df.Delta_LES)
+        if scaler=='Log':
+            data_df.to_parquet(filename+'_Log.parquet')
+        elif scaler=='Standard':
+            data_df.to_parquet(filename + '.parquet')
 
     #plt.show()
 
@@ -97,7 +96,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="case: UPRIME5, UPRIME75 .., train_test_set: train or test")
     parser.add_argument('--train_test_set',type=str)
     parser.add_argument('--case',type=str)
+    parser.add_argument('--scaler', type=str) #TODO: Standard, Log, maybe more...
     args = parser.parse_args()
 
     # run the function
-    compose_db(args.case,args.train_test_set)
+    compose_db(args.case,args.train_test_set,args.scaler)

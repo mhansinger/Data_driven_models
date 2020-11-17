@@ -108,6 +108,46 @@ validation_dataset = validation_dataset.batch(validation_batch)
 
 validation_steps= len(validation_df) / validation_batch
 
+#################################
+# PREDICT TEST SET FUNCTION
+#################################
+
+# load test set
+test_files = os.listdir(join(path_to_data, 'TEST'))
+test_files = [f for f in test_files if (f.startswith('test') and f.endswith('parquet'))]
+# shuffle the test_files list
+random.shuffle(test_files)
+
+test_df = pd.read_parquet(join(path_to_data, 'TEST', test_files[0]))
+
+test_df_norm = normalizeStandard(test_df, moments)
+
+
+def predict_test():
+    print('\n##############################')
+    print('Predict on test set')
+    print('##############################\n')
+
+    # predict y_hat
+    y_hat = DNN.predict(test_df_norm[FEATURES])
+
+    omega_DNS_predict = reTransformTarget(y_hat, moments)
+
+    # plot the results
+    plt.figure()
+    plt.scatter(test_df['c_bar'],test_df['omega_DNS_filtered'],s=0.3,c='b')
+    plt.scatter(test_df['c_bar'],omega_DNS_predict,s=0.3,c='r')
+    plt.scatter(test_df['c_bar'],test_df['omega_model_planar'],s=0.3,c='k')
+    plt.xlabel('c_bar')
+    plt.ylabel('omega')
+    plt.show(block=False)
+
+    plt.figure()
+    plt.scatter(test_df['omega_DNS_filtered'],omega_DNS_predict,s=0.3)
+    plt.plot([0,1],[0,1],'k')
+    plt.xlabel('true omega_DNS_filtered')
+    plt.ylabel('predicted omega_DNS_filtered')
+    plt.show(block=False)
 
 ##################################
 #Build and compile the ResNet
@@ -133,13 +173,13 @@ def compiled_model(dim_input=len(FEATURES),dim_output=len(TARGET),neurons=NEURON
         x = tf.keras.layers.Dense(neurons, activation='relu')(inputs)
         for b in range(1,blocks+1):
             x = res_block_org(x,neurons,block=str(b))
-            x = tf.keras.layers.Dropout(rate=0.2)(x)
+            x = tf.keras.layers.Dropout(rate=0.1)(x)
 
         # add a droput layer
-        # x = tf.keras.layers.Dropout(rate=0.2)(x)
+        x = tf.keras.layers.Dropout(rate=0.1)(x)
         # add another bypass layer
         x = tf.keras.layers.Dense(dim_input,activation='relu')(x)
-        # x = tf.keras.layers.add([x, inputs],name='add_layers')
+        x = tf.keras.layers.add([x, inputs],name='add_layers')
         # x = tf.keras.Activation('relu')(x)
         output = tf.keras.layers.Dense(dim_output,activation='linear', name='prediction_layer')(x)
         model = tf.keras.Model(inputs=inputs,outputs=output)
@@ -240,7 +280,7 @@ for file_name in training_files:
     history = DNN.fit(
         training_dataset,
         #normalized_train_df[FEATURES].to_numpy(),normalized_train_df[TARGET].to_numpy(),                       #TODO: What if I use X_train, y_train (np.array)?
-        epochs=20,#epochs,
+        epochs=EPOCHS,#epochs,
         #validation_split=0.1,
         validation_data=validation_dataset,     #TODO: use crossvalidation??
         validation_steps=validation_steps,
@@ -257,70 +297,9 @@ for file_name in training_files:
     # SAVE model
     DNN.save(DNN_model_path,save_format='h5')
 
+
+
     # plt.figure()
     # plt.plot(history.history['loss'])
     # plt.plot(history.history['val_loss'])
     # plt.show(block=False)
-
-
-print('\n##############################')
-print('Predict on test set')
-print('##############################\n')
-
-# load test set
-test_files = os.listdir(join(path_to_data,'TEST'))
-test_files = [f for f in test_files if (f.startswith('test') and f.endswith('parquet'))]
-# shuffle the test_files list
-random.shuffle(test_files)
-
-test_df = pd.read_parquet(test_files[0])
-
-test_df_norm = normalizeStandard(test_df,moments)
-
-# predict y_hat
-y_hat = DNN.predict(test_df_norm[FEATURES])
-
-omega_DNS_predict = reTransformTarget(y_hat,moments)
-
-# plot the results
-plt.figure()
-plt.scatter(test_df['c_bar'],test_df['omega_DNS_filtered'],s=0.3,c='b')
-plt.scatter(test_df['c_bar'],omega_DNS_predict,s=0.3,c='r')
-plt.scatter(test_df['c_bar'],test_df['omega_model_planar'],s=0.3,c='k')
-plt.xlabel('c_bar')
-plt.ylabel('omega')
-plt.show(block=False)
-
-plt.figure()
-plt.scatter(test_df['omega_DNS_filtered'],omega_DNS_predict,s=0.3)
-plt.plot([0,1],[0,1],'k')
-plt.xlabel('true omega_DNS_filtered')
-plt.ylabel('predicted omega_DNS_filtered')
-plt.show(block=False)
-
-#
-# y_pred = DNN.predict(X_test,batch_size=64)
-#
-# y_pred_rescale = scaler_y.rescale(y_pred)
-# y_test_rescale = scaler_y.rescale(y_test)
-#
-# X_test_rescale = scaler_X.rescale(X_test)
-#
-# #%%
-# plt.figure()
-# plt.scatter(y_pred_rescale,y_test_rescale,s=0.2)
-# plt.show(block=False)
-#
-# plt.figure()
-# plt.scatter(X_test_rescale[:,0],y_test_rescale[:],c='b',s=0.2)
-# plt.scatter(X_test_rescale[:,0],y_pred_rescale[:],c='r',s=0.2)
-# #plt.scatter(X_test_rescale[:,0],X_test_rescale[:,1],c=  'k',s=0.2)
-# plt.legend(['Test data','Prediction','Pfitzner model'])
-# plt.xlabel('c_bar')
-# plt.ylabel('omega')
-# plt.show(block=False)
-#
-# plt.figure()
-# plt.semilogy(history.history['loss'],scaley='log')
-# plt.semilogy(history.history['val_loss'],scaley='log')
-# plt.show(block=False)

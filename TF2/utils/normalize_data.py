@@ -1,6 +1,6 @@
 # normalize the trainings/test data set
 import pandas as pd
-
+import numpy as np
 
 def normalizeStandard(data_df,moments):
     '''
@@ -62,3 +62,11 @@ def reTransformTarget(y_hat,moments):
         print('Features in moments und data set do no match:',e)
 
     return data_df
+
+def reTransformLog(data_df):
+    '''
+
+    :param data_df:
+    :return:
+    '''
+    return data_df.apply(np.exp)

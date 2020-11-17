@@ -1,6 +1,7 @@
 
 from typing import List
 
+import random
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -14,7 +15,7 @@ from sklearn.model_selection import train_test_split
 from utils.customObjects import coeff_r2, SGDRScheduler
 from tensorflow.keras.callbacks import ModelCheckpoint, LearningRateScheduler
 
-from utils.normalize_data import normalizeStandard, reTransformStandard
+from utils.normalize_data import normalizeStandard, reTransformStandard, reTransformTarget
 from utils.resBlock import res_block_org
 
 
@@ -37,11 +38,25 @@ This is to train the Network for various Delta_LES
 #CASE and parameters
 ##################################
 
+# # switch off GPU
+# os.environ['CUDA_VISIBLE_DEVICES']="-1"
+#
+# # DISTRIBUTED
+# strategy = tf.distribute.MirroredStrategy()
+# print('Number of devices: {}'.format(strategy.num_replicas_in_sync))
+
+
 CASE = 'UPRIME5'
 
-BATCH_SIZE = 64#128
-NEURONS = 100
+BATCH_SIZE = 6400#000#64#128
+NEURONS = 200
 RES_BLOCKS =10
+EPOCHS=2
+LOSS='mse' #'mse'
+
+# print('\n############################')
+# print('THIS RUNS WITH LOG TRANSFORMED DATA')
+# print('############################\n')
 
 ##################################
 # PATHS
@@ -51,7 +66,7 @@ RES_BLOCKS =10
 path_to_data = '/media/max/HDD3/DNS_Data/Planar/NX512/'+CASE+'/postProcess_DNN/ALL'
 
 # read in the moments (mean and std of the data set
-moments = pd.read_csv(join(path_to_data,'moments_'+CASE+'.csv'),index_col=0)
+moments = pd.read_csv(join(path_to_data,'moments_'+CASE+'_Log.csv'),index_col=0)
 
 DNN_model_path = join('/home/max/Python/Data_driven_models/TF2/trained_models/DNN_'+CASE+'_nrns_'+str(NEURONS)+'_blks_'+str(RES_BLOCKS)+'.h5')
 #join(path_to_data,'DNN_'+CASE+'_nrns_'+str(NEURONS)+'_blks_'+str(RES_BLOCKS)+'.h5')
@@ -66,7 +81,8 @@ FEATURES: List[str] = ['c_bar',  'omega_model_planar', 'UP_delta',
 TARGET: List[str] = ['omega_DNS_filtered']
 
 training_files = os.listdir(join(path_to_data,'TRAIN'))
-training_files = [f for f in training_files if (f.startswith('train') and f.endswith('parquet'))]
+training_files = [f for f in training_files if (f.startswith('train') and f.endswith('Log.parquet'))]
+random.shuffle(training_files)
 
 print('Training files: ',training_files)
 
@@ -77,6 +93,10 @@ validation_file = training_files.pop(0)
 #validation data set
 ##################################
 validation_df = pd.read_parquet(join(path_to_data,'TRAIN',validation_file))
+
+validation_df = validation_df.dropna(axis=0)
+
+validation_df = validation_df.sample(frac=0.5)
 
 validation_norm_df = normalizeStandard(validation_df,moments)
 
@@ -97,6 +117,51 @@ validation_dataset = validation_dataset.batch(validation_batch)
 validation_steps= len(validation_df) / validation_batch
 
 
+#################################
+# PREDICT TEST SET FUNCTION
+#################################
+
+# load test set
+test_files = os.listdir(join(path_to_data, 'TEST'))
+test_files = [f for f in test_files if (f.startswith('test') and f.endswith('Log.parquet'))]
+# shuffle the test_files list
+random.shuffle(test_files)
+
+test_df = pd.read_parquet(join(path_to_data, 'TEST', test_files[0]))
+
+test_df_norm = normalizeStandard(test_df, moments)
+
+
+def predict_test():
+    print('\n##############################')
+    print('Predict on test set')
+    print('##############################\n')
+
+    # predict y_hat
+    y_hat = DNN.predict(test_df_norm[FEATURES])
+
+    omega_DNS_predict = reTransformTarget(y_hat, moments)
+
+    # Retransform
+    test_df_real = test_df.apply(np.exp)
+    omega_DNS_predict_real = omega_DNS_predict.apply(np.exp)
+
+    # plot the results
+    plt.figure()
+    plt.scatter(test_df_real['c_bar'],test_df_real['omega_DNS_filtered'],s=0.3,c='b')
+    plt.scatter(test_df_real['c_bar'],omega_DNS_predict_real,s=0.3,c='r')
+    plt.scatter(test_df_real['c_bar'],test_df_real['omega_model_planar'],s=0.3,c='k')
+    plt.xlabel('c_bar')
+    plt.ylabel('omega')
+    plt.show(block=False)
+
+    plt.figure()
+    plt.scatter(test_df_real['omega_DNS_filtered'],omega_DNS_predict_real,s=0.3)
+    plt.plot([0,1],[0,1],'k')
+    plt.xlabel('true omega_DNS_filtered')
+    plt.ylabel('predicted omega_DNS_filtered')
+    plt.show(block=False)
+
 ##################################
 #Build and compile the ResNet
 ##################################
@@ -104,16 +169,27 @@ validation_steps= len(validation_df) / validation_batch
 # estimate the length of the data set
 number_datapoints = tf.data.experimental.cardinality(validation_dataset).numpy() * len(training_files)
 
-# function to compile a model
-def compiled_model(dim_input=len(FEATURES),dim_output=len(TARGET),neurons=NEURONS,blocks=RES_BLOCKS,loss='mse'):
+#TODO: test with this optimizer
+# custom optimizer with learning rate
+lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
+    initial_learning_rate=1e-3,
+    decay_steps=1000,
+    decay_rate=0.9)
+adam_optimizer = tf.keras.optimizers.Adam(learning_rate=lr_schedule)
 
+# function to compile a model
+def compiled_model(dim_input=len(FEATURES),dim_output=len(TARGET),neurons=NEURONS,blocks=RES_BLOCKS,loss=LOSS):
+
+    # DISTRIBUTED
+    #with strategy.scope():
     inputs = tf.keras.layers.Input(shape=(dim_input,),name='Input')
     x = tf.keras.layers.Dense(neurons, activation='relu')(inputs)
     for b in range(1,blocks+1):
         x = res_block_org(x,neurons,block=str(b))
+        x = tf.keras.layers.Dropout(rate=0.1)(x)
 
     # add a droput layer
-    x = tf.keras.layers.Dropout(rate=0.2)(x)
+    x = tf.keras.layers.Dropout(rate=0.1)(x)
     # add another bypass layer
     x = tf.keras.layers.Dense(dim_input,activation='relu')(x)
     x = tf.keras.layers.add([x, inputs],name='add_layers')
@@ -122,7 +198,7 @@ def compiled_model(dim_input=len(FEATURES),dim_output=len(TARGET),neurons=NEURON
     model = tf.keras.Model(inputs=inputs,outputs=output)
 
     #compile model
-    model.compile(loss=loss, optimizer=tf.keras.optimizers.Adam(learning_rate=0.001), metrics=[loss])
+    model.compile(loss=loss, optimizer=adam_optimizer, metrics=[loss])
 
     return model
 
@@ -144,15 +220,6 @@ checkpoint = ModelCheckpoint(DNN_model_path,
                              mode='max',
                              save_freq='epoch')
 
-#TODO: test with this optimizer
-'''
-# custom optimizer with learning rate
-lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
-    initial_learning_rate=1e-2,
-    decay_steps=10000,
-    decay_rate=0.9)
-optimizer = tf.keras.optimizers.SGD(learning_rate=lr_schedule)
-'''
 
 #TODO: check this ain
 # create the model or read it from file
@@ -165,7 +232,7 @@ else:
                          dim_output=len(TARGET),
                          neurons=NEURONS,
                          blocks=RES_BLOCKS,
-                         loss='mse')
+                         loss=LOSS)
 
 
 ##################################
@@ -179,10 +246,13 @@ no_files = len(training_files)+1
 
 print('\n*******************\nStarting Training Loop\n*******************\n')
 for file_name in training_files:
-    print('Training on file: %s\n' % file_name)
+    print('\nTraining on file: %s\n' % file_name)
 
     # read in from file
     this_train_df = pd.read_parquet(join(path_to_data,'TRAIN',file_name))
+
+    # drop rows where NaN
+    this_train_df = this_train_df.dropna(axis=0)
 
     # normalize the data set
     normalized_train_df = normalizeStandard(this_train_df,moments)
@@ -216,7 +286,7 @@ for file_name in training_files:
                              cycle_length=c_len, lr_decay=0.6, mult_factor=clc)
 
     # update the call backs list
-    callbacks = [loss_callback,checkpoint, schedule] #[schedule,loss_callback,earlyStop_callback,checkpoint]
+    callbacks = [loss_callback,checkpoint] #[schedule,loss_callback,earlyStop_callback,checkpoint]
 
     print(DNN.summary())
 
@@ -225,12 +295,12 @@ for file_name in training_files:
     # fit the model
     history = DNN.fit(
         training_dataset,
-        #normalized_train_df[FEATURES].to_numpy(),normalized_train_df[TARGET].to_numpy(),                       #TODO: What if I use X_train, y_train (np.array)?
-        epochs=1000,#epochs,
+        #normalized_train_df[FEATURES].to_numpy(),normalized_train_df[TARGET].to_numpy(),       #TODO: What if I use X_train, y_train (np.array)?
+        epochs=EPOCHS,#epochs,
         #validation_split=0.1,
-        validation_data=validation_dataset,     #TODO: use crossvalidation??
+        validation_data=validation_dataset,
         validation_steps=validation_steps,
-        verbose=1,
+        #verbose=1,
         #callbacks=callbacks,
         )
 
@@ -243,36 +313,18 @@ for file_name in training_files:
     # SAVE model
     DNN.save(DNN_model_path,save_format='h5')
 
-    plt.figure()
-    plt.plot(history.history['loss'])
-    plt.plot(history.history['val_loss'])
-    plt.show(block=False)
+    # Decrease the batchsize
+    BATCH_SIZE = int(BATCH_SIZE/4)
+    if BATCH_SIZE < 32:
+        BATCH_SIZE = 32
+
+    #predict_test()
+
+    # plt.figure()
+    # plt.plot(history.history['loss'])
+    # plt.plot(history.history['val_loss'])
+    # plt.show(block=False)
 
 
-#
-#
-# y_pred = DNN.predict(X_test,batch_size=64)
-#
-# y_pred_rescale = scaler_y.rescale(y_pred)
-# y_test_rescale = scaler_y.rescale(y_test)
-#
-# X_test_rescale = scaler_X.rescale(X_test)
-#
-# #%%
-# plt.figure()
-# plt.scatter(y_pred_rescale,y_test_rescale,s=0.2)
-# plt.show(block=False)
-#
-# plt.figure()
-# plt.scatter(X_test_rescale[:,0],y_test_rescale[:],c='b',s=0.2)
-# plt.scatter(X_test_rescale[:,0],y_pred_rescale[:],c='r',s=0.2)
-# #plt.scatter(X_test_rescale[:,0],X_test_rescale[:,1],c=  'k',s=0.2)
-# plt.legend(['Test data','Prediction','Pfitzner model'])
-# plt.xlabel('c_bar')
-# plt.ylabel('omega')
-# plt.show(block=False)
-#
-# plt.figure()
-# plt.semilogy(history.history['loss'],scaley='log')
-# plt.semilogy(history.history['val_loss'],scaley='log')
-# plt.show(block=False)
+
+
