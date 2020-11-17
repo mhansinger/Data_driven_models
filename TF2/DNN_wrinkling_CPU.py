@@ -132,12 +132,13 @@ def compiled_model(dim_input=len(FEATURES),dim_output=len(TARGET),neurons=NEURON
         x = tf.keras.layers.Dense(neurons, activation='relu')(inputs)
         for b in range(1,blocks+1):
             x = res_block_org(x,neurons,block=str(b))
+            x = tf.keras.layers.Dropout(rate=0.2)(x)
 
         # add a droput layer
-        x = tf.keras.layers.Dropout(rate=0.2)(x)
+        # x = tf.keras.layers.Dropout(rate=0.2)(x)
         # add another bypass layer
         x = tf.keras.layers.Dense(dim_input,activation='relu')(x)
-        x = tf.keras.layers.add([x, inputs],name='add_layers')
+        # x = tf.keras.layers.add([x, inputs],name='add_layers')
         # x = tf.keras.Activation('relu')(x)
         output = tf.keras.layers.Dense(dim_output,activation='linear', name='prediction_layer')(x)
         model = tf.keras.Model(inputs=inputs,outputs=output)
