@@ -27,7 +27,7 @@ def reTransformStandard(data_normalized,moments):
     '''
     :param data_df: original data set
     :param moments: mean and std read in from disk. usually called moments_UPRIMEXY.csv
-    :return: normalized data set
+    :return: data set in absolute values
     '''
 
     # create empty dataframe
@@ -40,5 +40,25 @@ def reTransformStandard(data_normalized,moments):
         except KeyError as e:
             print('Features in moments und data set do no match:',e)
             break
+
+    return data_df
+
+def reTransformTarget(y_hat,moments):
+    '''
+    :param y_hat: Predicted target
+    :param moments: mean and st read in from disk. usually called_moments_UPRIMEXY.csv
+    :return: absolute values of predicted target (for comparison)
+    '''
+
+    TARGET = 'omega_DNS_filtered'
+
+    # create empty dataframe
+    data_df = pd.DataFrame(data=None,columns=[TARGET],index=range(0,len(y_hat)))
+
+    # fill the data frame
+    try:
+        data_df[TARGET] = (y_hat * moments.loc[TARGET]['std']) +moments.loc[TARGET]['mean']
+    except KeyError as e:
+        print('Features in moments und data set do no match:',e)
 
     return data_df

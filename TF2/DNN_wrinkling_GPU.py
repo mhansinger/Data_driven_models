@@ -37,17 +37,9 @@ This is to train the Network for various Delta_LES
 #CASE and parameters
 ##################################
 
-# switch off GPU
-os.environ['CUDA_VISIBLE_DEVICES']="-1"
-
-# DISTRIBUTED
-strategy = tf.distribute.MirroredStrategy()
-print('Number of devices: {}'.format(strategy.num_replicas_in_sync))
-
-
 CASE = 'UPRIME5'
 
-BATCH_SIZE = 32#64#128
+BATCH_SIZE = 64#128
 NEURONS = 100
 RES_BLOCKS =10
 
@@ -56,12 +48,12 @@ RES_BLOCKS =10
 ##################################
 
 # path to the UPRIMEXY data set
-path_to_data = '/home/hansinger/hansinger_share/'+CASE
+path_to_data = '/media/max/HDD3/DNS_Data/Planar/NX512/'+CASE+'/postProcess_DNN/ALL'
 
 # read in the moments (mean and std of the data set
 moments = pd.read_csv(join(path_to_data,'moments_'+CASE+'.csv'),index_col=0)
 
-DNN_model_path = join('/home/hansinger/hansinger_share/ANNs/DNN_'+CASE+'_nrns_'+str(NEURONS)+'_blks_'+str(RES_BLOCKS)+'.h5')
+DNN_model_path = join('/home/max/Python/Data_driven_models/TF2/trained_models/DNN_'+CASE+'_nrns_'+str(NEURONS)+'_blks_'+str(RES_BLOCKS)+'.h5')
 #join(path_to_data,'DNN_'+CASE+'_nrns_'+str(NEURONS)+'_blks_'+str(RES_BLOCKS)+'.h5')
 
 ###################################
@@ -112,35 +104,25 @@ validation_steps= len(validation_df) / validation_batch
 # estimate the length of the data set
 number_datapoints = tf.data.experimental.cardinality(validation_dataset).numpy() * len(training_files)
 
-#TODO: test with this optimizer
-# custom optimizer with learning rate
-lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
-    initial_learning_rate=1e-3,
-    decay_steps=1000,
-    decay_rate=0.9)
-adam_optimizer = tf.keras.optimizers.Adam(learning_rate=lr_schedule)
-
 # function to compile a model
 def compiled_model(dim_input=len(FEATURES),dim_output=len(TARGET),neurons=NEURONS,blocks=RES_BLOCKS,loss='mse'):
 
-    # DISTRIBUTED
-    with strategy.scope():
-        inputs = tf.keras.layers.Input(shape=(dim_input,),name='Input')
-        x = tf.keras.layers.Dense(neurons, activation='relu')(inputs)
-        for b in range(1,blocks+1):
-            x = res_block_org(x,neurons,block=str(b))
+    inputs = tf.keras.layers.Input(shape=(dim_input,),name='Input')
+    x = tf.keras.layers.Dense(neurons, activation='relu')(inputs)
+    for b in range(1,blocks+1):
+        x = res_block_org(x,neurons,block=str(b))
 
-        # add a droput layer
-        x = tf.keras.layers.Dropout(rate=0.2)(x)
-        # add another bypass layer
-        x = tf.keras.layers.Dense(dim_input,activation='relu')(x)
-        x = tf.keras.layers.add([x, inputs],name='add_layers')
-        # x = tf.keras.Activation('relu')(x)
-        output = tf.keras.layers.Dense(dim_output,activation='linear', name='prediction_layer')(x)
-        model = tf.keras.Model(inputs=inputs,outputs=output)
+    # add a droput layer
+    x = tf.keras.layers.Dropout(rate=0.2)(x)
+    # add another bypass layer
+    x = tf.keras.layers.Dense(dim_input,activation='relu')(x)
+    x = tf.keras.layers.add([x, inputs],name='add_layers')
+    # x = tf.keras.Activation('relu')(x)
+    output = tf.keras.layers.Dense(dim_output,activation='linear', name='prediction_layer')(x)
+    model = tf.keras.Model(inputs=inputs,outputs=output)
 
-        #compile model
-        model.compile(loss=loss, optimizer=adam_optimizer, metrics=[loss])
+    #compile model
+    model.compile(loss=loss, optimizer=tf.keras.optimizers.Adam(learning_rate=0.001), metrics=[loss])
 
     return model
 
@@ -162,6 +144,15 @@ checkpoint = ModelCheckpoint(DNN_model_path,
                              mode='max',
                              save_freq='epoch')
 
+#TODO: test with this optimizer
+'''
+# custom optimizer with learning rate
+lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
+    initial_learning_rate=1e-2,
+    decay_steps=10000,
+    decay_rate=0.9)
+optimizer = tf.keras.optimizers.SGD(learning_rate=lr_schedule)
+'''
 
 #TODO: check this ain
 # create the model or read it from file
@@ -225,7 +216,7 @@ for file_name in training_files:
                              cycle_length=c_len, lr_decay=0.6, mult_factor=clc)
 
     # update the call backs list
-    callbacks = [loss_callback,checkpoint] #[schedule,loss_callback,earlyStop_callback,checkpoint]
+    callbacks = [loss_callback,checkpoint, schedule] #[schedule,loss_callback,earlyStop_callback,checkpoint]
 
     print(DNN.summary())
 
