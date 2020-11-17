@@ -235,7 +235,7 @@ for file_name in training_files:
     history = DNN.fit(
         training_dataset,
         #normalized_train_df[FEATURES].to_numpy(),normalized_train_df[TARGET].to_numpy(),                       #TODO: What if I use X_train, y_train (np.array)?
-        epochs=1000,#epochs,
+        epochs=20,#epochs,
         #validation_split=0.1,
         validation_data=validation_dataset,     #TODO: use crossvalidation??
         validation_steps=validation_steps,
