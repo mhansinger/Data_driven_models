@@ -45,7 +45,7 @@ def compose_parquet(case,train_test_set):
         mag_U = np.sqrt(data_pq['U_bar'].values**2 + data_pq['V_bar'].values**2 +data_pq['W_bar'].values**2)
         mag_grad_c = np.sqrt(data_pq['grad_c_x_LES'].values**2 + data_pq['grad_c_y_LES'].values**2 +data_pq['grad_c_z_LES'].values**2)
 
-        sum_U = data_pq['U_bar'].values + data_pq['V_bar']+data_pq['W_bar'].values
+        sum_U = np.absolute(data_pq['U_bar'].values) + np.absolute(data_pq['V_bar'])+np.absolute(data_pq['W_bar'].values)
         sum_c = np.absolute(data_pq['grad_c_x_LES'].values) + np.absolute(data_pq['grad_c_y_LES'].values) +np.absolute(data_pq['grad_c_z_LES'].values)
 
         grad_U = np.sqrt(data_pq['grad_U_x_LES'].values**2 + data_pq['grad_U_y_LES'].values**2 +data_pq['grad_U_z_LES'].values**2)
