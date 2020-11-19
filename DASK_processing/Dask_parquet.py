@@ -13,6 +13,29 @@ import pandas as pd
 import numpy as np
 
 
+def compute_S_R(gradient_tensor):
+    '''
+    Computes the symetric and anti symetric strain rate tensor
+    :param gradient_tensor:
+    :return: Strain, Anti
+    '''
+
+    print('Computing S and R')
+
+    length = gradient_tensor.shape[-1]
+
+    Strain = gradient_tensor.copy() * 0
+    Anti = gradient_tensor.copy() * 0
+
+    for i in range(0, length):
+        this_tensor = gradient_tensor[:, :, i]
+        this_transposed = np.transpose(gradient_tensor[:, :, i])
+
+        Strain[:, :, i] = 0.5 * (this_tensor + this_transposed)
+        Anti[:, :, i] = 0.5 * (this_tensor - this_transposed)
+
+    return Strain, Anti
+
 
 def compose_parquet(case,train_test_set):
 
@@ -24,7 +47,6 @@ def compose_parquet(case,train_test_set):
 
     # shuffle the files list
     random.shuffle(files_list)
-
 
     for f in files_list:
 
@@ -64,11 +86,13 @@ def compose_parquet(case,train_test_set):
                             ])
 
 
-        print('Computing S and R')
-        # symetric strain
-        Strain = 0.5*(gradient_tensor + np.transpose(gradient_tensor,(1,0,2)))
-        #anti symetric strain
-        Anti =  0.5*(gradient_tensor - np.transpose(gradient_tensor,(1,0,2)))
+        Strain, Anti = compute_S_R(gradient_tensor=gradient_tensor)
+
+        # print('Computing S and R')
+        # # symetric strain
+        # Strain = 0.5*(gradient_tensor + np.transpose(gradient_tensor,(1,0,2)))
+        # #anti symetric strain
+        # Anti =  0.5*(gradient_tensor - np.transpose(gradient_tensor,(1,0,2)))
 
 
         print('Computing lambdas')
