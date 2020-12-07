@@ -14,10 +14,17 @@ from sklearn.model_selection import train_test_split
 
 from utils.customObjects import coeff_r2, SGDRScheduler
 from tensorflow.keras.callbacks import ModelCheckpoint, LearningRateScheduler
+from tensorflow.keras.regularizers import l1, l2, l1_l2
 
 from utils.normalize_data import normalizeStandard, reTransformStandard, reTransformTarget
 from utils.resBlock import res_block_org
 
+import argparse
+
+import shap
+# print the JS visualization code to the notebook
+
+shap.initjs()
 
 '''
 This is to train the Network for various Delta_LES
@@ -45,14 +52,28 @@ This is to train the Network for various Delta_LES
 # strategy = tf.distribute.MirroredStrategy()
 # print('Number of devices: {}'.format(strategy.num_replicas_in_sync))
 
+###################################
+# Args parser
+parser = argparse.ArgumentParser(
+    description="Define batch size, learing_rate, scaler...")
+parser.add_argument('--BATCH_SIZE', type=int)
+parser.add_argument('--LEARNING_RATE', type=float)
+parser.add_argument('--SCALER', type=str)
+args = parser.parse_args()
+###################################
+
 
 CASE = 'UPRIME5'
 
-BATCH_SIZE = 6400#000#64#128
-NEURONS = 200
-RES_BLOCKS =10
-EPOCHS=2
-LOSS='mse' #'mse'
+BATCH_SIZE = args.BATCH_SIZE #3200 #000#64#128
+NEURONS = 200 #200
+RES_BLOCKS = 15
+EPOCHS = 30
+LOSS = 'mse' #'mse'
+lr = args.LEARNING_RATE #1e-5
+
+# scaler
+SCALER = args.SCALER
 
 # print('\n############################')
 # print('THIS RUNS WITH LOG TRANSFORMED DATA')
@@ -63,12 +84,21 @@ LOSS='mse' #'mse'
 ##################################
 
 # path to the UPRIMEXY data set
-path_to_data = '/media/max/HDD3/DNS_Data/Planar/NX512/'+CASE+'/postProcess_DNN/ALL'
+path_to_data = '/media/max/HDD3/DNS_Data/Planar/NX512/'+CASE+'/postProcess_DNN'
 
 # read in the moments (mean and std of the data set
-moments = pd.read_csv(join(path_to_data,'moments_'+CASE+'_Log.csv'),index_col=0)
+if SCALER == 'Log':
+    moments = pd.read_csv(join(path_to_data,'moments_'+CASE+'_Log.csv'),index_col=0)
+    DNN_model_path = join(
+        '/home/max/Python/Data_driven_models/TF2/trained_models/DNN_' + CASE + '_nrns_' + str(NEURONS) + '_blks_' + str(
+            RES_BLOCKS) + '_Log.h5')
+elif SCALER == 'Standard':
+    moments = pd.read_csv(join(path_to_data, 'moments_' + CASE + '.csv'), index_col=0)
+    DNN_model_path = join(
+        '/home/max/Python/Data_driven_models/TF2/trained_models/DNN_' + CASE + '_nrns_' + str(NEURONS) + '_blks_' + str(
+            RES_BLOCKS) + '.h5')
 
-DNN_model_path = join('/home/max/Python/Data_driven_models/TF2/trained_models/DNN_'+CASE+'_nrns_'+str(NEURONS)+'_blks_'+str(RES_BLOCKS)+'.h5')
+
 #join(path_to_data,'DNN_'+CASE+'_nrns_'+str(NEURONS)+'_blks_'+str(RES_BLOCKS)+'.h5')
 
 ###################################
@@ -76,12 +106,17 @@ DNN_model_path = join('/home/max/Python/Data_driven_models/TF2/trained_models/DN
 ###################################
 FEATURES: List[str] = ['c_bar',  'omega_model_planar', 'UP_delta',
                         'SGS_flux', 'Delta_LES', 'mag_grad_c', 'mag_U', 'sum_c', 'sum_U',
-                        'sum_grad_U', 'mag_grad_U', 'lambda_1',  'lambda_3',]
+                        'sum_grad_U', 'mag_grad_U', 'lambda_1',  'lambda_3','c_prime','mag_strain','mag_vorticity']
 
 TARGET: List[str] = ['omega_DNS_filtered']
 
 training_files = os.listdir(join(path_to_data,'TRAIN'))
-training_files = [f for f in training_files if (f.startswith('train') and f.endswith('Log.parquet'))]
+
+if SCALER=='Log':
+    training_files = [f for f in training_files if (f.startswith('train') and f.endswith('Log.parquet'))]
+elif SCALER=='Standard':
+    training_files = [f for f in training_files if (f.startswith('train') and f.endswith('.parquet'))]
+
 random.shuffle(training_files)
 
 print('Training files: ',training_files)
@@ -123,11 +158,16 @@ validation_steps= len(validation_df) / validation_batch
 
 # load test set
 test_files = os.listdir(join(path_to_data, 'TEST'))
-test_files = [f for f in test_files if (f.startswith('test') and f.endswith('Log.parquet'))]
+
+if SCALER=='Log':
+    test_files = [f for f in test_files if (f.startswith('test') and f.endswith('Log.parquet'))]
+elif SCALER=='Standard':
+    test_files = [f for f in test_files if (f.startswith('test') and f.endswith('.parquet'))]
+
 # shuffle the test_files list
 random.shuffle(test_files)
 
-test_df = pd.read_parquet(join(path_to_data, 'TEST', test_files[0]))
+test_df = pd.read_parquet(join(path_to_data, 'TEST', test_files[0])).sample(frac=0.3)
 
 test_df_norm = normalizeStandard(test_df, moments)
 
@@ -172,7 +212,7 @@ number_datapoints = tf.data.experimental.cardinality(validation_dataset).numpy()
 #TODO: test with this optimizer
 # custom optimizer with learning rate
 lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
-    initial_learning_rate=1e-3,
+    initial_learning_rate=lr,
     decay_steps=1000,
     decay_rate=0.9)
 adam_optimizer = tf.keras.optimizers.Adam(learning_rate=lr_schedule)
@@ -186,15 +226,15 @@ def compiled_model(dim_input=len(FEATURES),dim_output=len(TARGET),neurons=NEURON
     x = tf.keras.layers.Dense(neurons, activation='relu')(inputs)
     for b in range(1,blocks+1):
         x = res_block_org(x,neurons,block=str(b))
-        x = tf.keras.layers.Dropout(rate=0.1)(x)
+        #x = tf.keras.layers.Dropout(rate=0.1)(x)
 
     # add a droput layer
-    x = tf.keras.layers.Dropout(rate=0.1)(x)
+    # x = tf.keras.layers.Dropout(rate=0.1)(x)
     # add another bypass layer
     x = tf.keras.layers.Dense(dim_input,activation='relu')(x)
     x = tf.keras.layers.add([x, inputs],name='add_layers')
     # x = tf.keras.Activation('relu')(x)
-    output = tf.keras.layers.Dense(dim_output,activation='linear', name='prediction_layer')(x)
+    output = tf.keras.layers.Dense(dim_output, activation='linear', name='prediction_layer', kernel_regularizer=l1_l2(0.01,0.01))(x)
     model = tf.keras.Model(inputs=inputs,outputs=output)
 
     #compile model
@@ -210,22 +250,27 @@ class myCallback(tf.keras.callbacks.Callback):
             self.model.stop_training = True
 
 loss_callback = myCallback()
-earlyStop_callback = tf.keras.callbacks.EarlyStopping(monitor='loss', patience=30, min_delta=1e-7)
+
+# This callback will stop the training when there is no improvement for mind_delta in
+# the validation loss for 5 consecutive epochs.
+earlyStop_callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=2)
 
 # checkpoint the model (save it)
 checkpoint = ModelCheckpoint(DNN_model_path,
                              monitor='val_loss',        #TODO: 'val_loss should somehow also work??
                              verbose=1,
                              save_best_only=True,
-                             mode='max',
+                             mode='min',
                              save_freq='epoch')
 
 
-#TODO: check this ain
+#TODO: check this again
 # create the model or read it from file
 if os.path.isfile(DNN_model_path):
-    print('\nTrained model is already available, reading it from disk')
+    print('\nTrained model is already available, reading it from disk:')
+    print(DNN_model_path)
     DNN = tf.keras.models.load_model(DNN_model_path)
+    DNN.compile(loss=LOSS, optimizer=adam_optimizer, metrics=[LOSS])
 else:
     print('\nNo model available. Compiling new one')
     DNN = compiled_model(dim_input=len(FEATURES),
@@ -241,8 +286,6 @@ else:
 history_val_loss =[]
 history_train_loss =[]
 
-# counter training_files
-no_files = len(training_files)+1
 
 print('\n*******************\nStarting Training Loop\n*******************\n')
 for file_name in training_files:
@@ -272,51 +315,64 @@ for file_name in training_files:
     training_dataset = training_dataset.batch(BATCH_SIZE )
     #training_dataset = training_dataset.prefetch(tf.data.experimental.AUTOTUNE) # AUTOTUNE?
 
-    # Scheduler
-    #TODO: seems to work
-    a = 0
-    base = 2
-    clc = 2
-    for i in range(6):
-        a += base * clc ** (i)
-    print(a)
-    epochs, c_len = a, base
-    schedule = SGDRScheduler(min_lr=1e-6, max_lr=1e-4,
-                             steps_per_epoch=np.ceil(epochs / (BATCH_SIZE )),
-                             cycle_length=c_len, lr_decay=0.6, mult_factor=clc)
+    # # Scheduler
+    # #TODO: seems to work
+    # a = 0
+    # base = 2
+    # clc = 2
+    # for i in range(6):
+    #     a += base * clc ** (i)
+    # print(a)
+    # epochs, c_len = a, base
+    # schedule = SGDRScheduler(min_lr=1e-6, max_lr=1e-4,
+    #                          steps_per_epoch=np.ceil(epochs / (BATCH_SIZE )),
+    #                          cycle_length=c_len, lr_decay=0.6, mult_factor=clc)
 
     # update the call backs list
-    callbacks = [loss_callback,checkpoint] #[schedule,loss_callback,earlyStop_callback,checkpoint]
+    callbacks = [loss_callback,checkpoint,earlyStop_callback] #[schedule,loss_callback,earlyStop_callback,checkpoint]
 
-    print(DNN.summary())
+    #print(DNN.summary())
 
-    print('Batch size: ',BATCH_SIZE )
+    print('Batch size: ', BATCH_SIZE )
+
+    print('Learning rate: ',lr)
+
+    # custom optimizer with learning rate
+    lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
+            initial_learning_rate=lr,
+            decay_steps=1000,
+            decay_rate=0.9)
+            
+    adam_optimizer = tf.keras.optimizers.Adam(learning_rate=lr_schedule)
+
+    DNN.compile(loss=LOSS, optimizer=adam_optimizer, metrics=[LOSS])
 
     # fit the model
     history = DNN.fit(
         training_dataset,
         #normalized_train_df[FEATURES].to_numpy(),normalized_train_df[TARGET].to_numpy(),       #TODO: What if I use X_train, y_train (np.array)?
-        epochs=EPOCHS,#epochs,
+        epochs=EPOCHS,  #epochs,
         #validation_split=0.1,
         validation_data=validation_dataset,
         validation_steps=validation_steps,
         #verbose=1,
-        #callbacks=callbacks,
-        )
+        callbacks=callbacks,
+    )
 
-    no_files = no_files -1
 
     # append loss (train/val) per epoch to list for evaluation
     history_train_loss.append(history.history['loss'])
     history_train_loss.append(history.history['val_loss'])
 
     # SAVE model
-    DNN.save(DNN_model_path,save_format='h5')
+    #DNN.save(DNN_model_path,save_format='h5')
 
-    # Decrease the batchsize
-    BATCH_SIZE = int(BATCH_SIZE/4)
-    if BATCH_SIZE < 32:
-        BATCH_SIZE = 32
+    # # Decrease the batchsize
+    # BATCH_SIZE = int(BATCH_SIZE/2)
+    # if BATCH_SIZE < 32:
+    #     BATCH_SIZE = 32
+    #
+    lr = lr*0.9
 
     #predict_test()
 
@@ -327,4 +383,7 @@ for file_name in training_files:
 
 
 
-
+# # SHAP model explanation
+# # use Kernel SHAP to explain test set predictions
+# explainer = shap.DeepExplainer(DNN, normalized_train_df[FEATURES].sample(n=1000, random_state=0).to_numpy())
+# shap_values = explainer.shap_values(X_test, nsamples=100)

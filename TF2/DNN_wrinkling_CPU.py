@@ -14,6 +14,7 @@ from sklearn.model_selection import train_test_split
 
 from utils.customObjects import coeff_r2, SGDRScheduler
 from tensorflow.keras.callbacks import ModelCheckpoint, LearningRateScheduler
+from tensorflow.keras.regularizers import l1, l2, l1_l2
 
 from utils.normalize_data import normalizeStandard, reTransformStandard, reTransformTarget
 from utils.resBlock import res_block_org
@@ -48,11 +49,11 @@ print('Number of devices: {}'.format(strategy.num_replicas_in_sync))
 
 CASE = 'UPRIME5'
 
-BATCH_SIZE = 32000#64#128
-NEURONS = 102
+BATCH_SIZE = 64#64#128
+NEURONS = 200
 RES_BLOCKS =10
-EPOCHS=100
-LOSS='mae' #'mse'
+EPOCHS=10
+LOSS='mse' #'mse'
 
 ##################################
 # PATHS
@@ -159,9 +160,9 @@ number_datapoints = tf.data.experimental.cardinality(validation_dataset).numpy()
 #TODO: test with this optimizer
 # custom optimizer with learning rate
 lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
-    initial_learning_rate=1e-3,
+    initial_learning_rate=1e-4,
     decay_steps=1000,
-    decay_rate=0.9)
+    decay_rate=0.8)
 adam_optimizer = tf.keras.optimizers.Adam(learning_rate=lr_schedule)
 
 # function to compile a model
@@ -173,15 +174,15 @@ def compiled_model(dim_input=len(FEATURES),dim_output=len(TARGET),neurons=NEURON
         x = tf.keras.layers.Dense(neurons, activation='relu')(inputs)
         for b in range(1,blocks+1):
             x = res_block_org(x,neurons,block=str(b))
-            x = tf.keras.layers.Dropout(rate=0.1)(x)
+           # x = tf.keras.layers.Dropout(rate=0.1)(x)
 
         # add a droput layer
         x = tf.keras.layers.Dropout(rate=0.1)(x)
         # add another bypass layer
-        x = tf.keras.layers.Dense(dim_input,activation='relu')(x)
+        x = tf.keras.layers.Dense(dim_input,activation='relu',kernel_regularizer=l2(0.01))(x)
         x = tf.keras.layers.add([x, inputs],name='add_layers')
         # x = tf.keras.Activation('relu')(x)
-        output = tf.keras.layers.Dense(dim_output,activation='linear', name='prediction_layer')(x)
+        output = tf.keras.layers.Dense(dim_output,activation='linear', name='prediction_layer',kernel_regularizer=l2(0.01))(x)
         model = tf.keras.Model(inputs=inputs,outputs=output)
 
         #compile model
@@ -192,12 +193,12 @@ def compiled_model(dim_input=len(FEATURES),dim_output=len(TARGET),neurons=NEURON
 # call backs list for early stopping
 class myCallback(tf.keras.callbacks.Callback):
     def on_epoch_end(self, epoch, logs={}):
-        if(logs.get('val_loss')<1e-7):
+        if(logs.get('val_loss')<1e-5):
             print("\nReached loss < 1e-7 so cancelling training!")
             self.model.stop_training = True
 
 loss_callback = myCallback()
-earlyStop_callback = tf.keras.callbacks.EarlyStopping(monitor='loss', patience=30, min_delta=1e-7)
+earlyStop_callback = tf.keras.callbacks.EarlyStopping(monitor='val_loss', patience=30, min_delta=1e-6)
 
 # checkpoint the model (save it)
 checkpoint = ModelCheckpoint(DNN_model_path,
@@ -213,6 +214,7 @@ checkpoint = ModelCheckpoint(DNN_model_path,
 if os.path.isfile(DNN_model_path):
     print('\nTrained model is already available, reading it from disk')
     DNN = tf.keras.models.load_model(DNN_model_path)
+    DNN.compile(loss=LOSS, optimizer=adam_optimizer, metrics=[LOSS])
 else:
     print('\nNo model available. Compiling new one')
     DNN = compiled_model(dim_input=len(FEATURES),
@@ -270,9 +272,9 @@ for file_name in training_files:
                              cycle_length=c_len, lr_decay=0.6, mult_factor=clc)
 
     # update the call backs list
-    callbacks = [loss_callback,checkpoint] #[schedule,loss_callback,earlyStop_callback,checkpoint]
+    callbacks = [loss_callback,checkpoint, earlyStop_callback] #[schedule,loss_callback,earlyStop_callback,checkpoint]
 
-    print(DNN.summary())
+    #print(DNN.summary())
 
     print('Batch size: ',BATCH_SIZE )
 
@@ -285,7 +287,7 @@ for file_name in training_files:
         validation_data=validation_dataset,     #TODO: use crossvalidation??
         validation_steps=validation_steps,
         verbose=1,
-        #callbacks=callbacks,
+        callbacks=callbacks,
         )
 
     no_files = no_files -1

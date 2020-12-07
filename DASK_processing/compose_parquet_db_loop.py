@@ -22,7 +22,7 @@ def compose_db(case,train_test_set,scaler):
     :return:
     '''
 
-    path_to_data = '/media/max/HDD3/DNS_Data/Planar/NX512/'+case+'/postProcess_DNN/ALL'
+    path_to_data = '/media/max/HDD3/DNS_Data/Planar/NX512/'+case+'/postProcess_DNN/'
 
     # read in the data as dask dataframe
     data_pq = dd.read_parquet(join(path_to_data,'filter_width_*_DNN_'+case+'_'+train_test_set+'.parquet'),chunksize='2GB')
@@ -32,15 +32,17 @@ def compose_db(case,train_test_set,scaler):
 
     if train_test_set=='test':
         files = 1
+        FOLDER='TEST'
     else:
         files = 10
+        FOLDER='TRAIN'
 
-    # remove columns which are not used for training as they have spatial information (direction)
-    columns_to_remove=['U_bar', 'V_bar', 'W_bar','grad_c_x_LES', 'grad_c_y_LES', 'grad_c_z_LES', 'grad_U_x_LES',
-       'grad_V_x_LES', 'grad_W_x_LES', 'grad_U_y_LES', 'grad_V_y_LES',
-       'grad_W_y_LES', 'grad_U_z_LES', 'grad_V_z_LES', 'grad_W_z_LES']
+    # # remove columns which are not used for training as they have spatial information (direction)
+    # columns_to_remove=['U_bar', 'V_bar', 'W_bar','grad_c_x_LES', 'grad_c_y_LES', 'grad_c_z_LES', 'grad_U_x_LES',
+    #    'grad_V_x_LES', 'grad_W_x_LES', 'grad_U_y_LES', 'grad_V_y_LES',
+    #    'grad_W_y_LES', 'grad_U_z_LES', 'grad_V_z_LES', 'grad_W_z_LES']
 
-    data_pq=data_pq.drop(columns_to_remove,axis=1).astype(np.float32)
+    # data_pq=data_pq.drop(columns_to_remove,axis=1).astype(np.float32)
 
     # check if Log scaler
     if scaler=='Log':
@@ -74,10 +76,10 @@ def compose_db(case,train_test_set,scaler):
         data_df = data_pq.sample(frac=1/files).compute()
 
         # sample again to loose dask indexing
-        data_df = data_df.sample(frac=1.0).astype(np.float32).drop('Unnamed: 0',axis=1)
+        data_df = data_df.sample(frac=1.0).astype(np.float32)#.drop('Unnamed: 0',axis=1)
 
         # write the data base
-        filename=join(path_to_data,train_test_set+'_'+case+'_'+str(i))
+        filename=join(path_to_data,FOLDER,train_test_set+'_'+case+'_'+str(i))
 
         ## PARQUET
         if scaler=='Log':
