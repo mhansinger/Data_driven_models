@@ -1,0 +1,44 @@
+compile, as say,
+
+% ifort volume_fraction.f90 -o volume_fraction.exe
+
+run the executable
+
+ % ./volume_fraction.exe
+ working on dl   0.100000000000000     
+ working on dl   0.150000000000000     
+ working on dl   0.200000000000000     
+ working on dl   0.250000000000000     
+ working on dl   0.300000000000000     
+ working on dl   0.350000000000000     
+ working on dl   0.400000000000000     
+ working on dl   0.450000000000000     
+ working on dl   0.500000000000000     
+ working on dl   0.550000000000000     
+ working on dl   0.600000000000000     
+ working on dl   0.650000000000000     
+ working on dl   0.700000000000000     
+ working on dl   0.750000000000000     
+ working on dl   0.800000000000000     
+ working on dl   0.850000000000000     
+ working on dl   0.900000000000000     
+ working on dl   0.950000000000000     
+ working on dl    1.00000000000000     
+ working on dl    1.05000000000000     
+ working on dl    1.10000000000000     
+ working on dl    1.15000000000000     
+ working on dl    1.20000000000000     
+ working on dl    1.25000000000000     
+ working on dl    1.30000000000000     
+ working on dl    1.35000000000000     
+ working on dl    1.40000000000000     
+ working on dl    1.45000000000000     
+ working on dl    1.50000000000000     
+ working on dl    1.55000000000000     
+ working on dl    1.60000000000000     
+ working on dl    1.65000000000000     
+ working on dl    1.70000000000000     
+
+
+17 data files will be produced, giving the angle phi, angle theta,
+volume and number of points in the intersection. 

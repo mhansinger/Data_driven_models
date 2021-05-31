@@ -44,6 +44,9 @@ def compose_db(case,train_test_set,scaler):
 
     # data_pq=data_pq.drop(columns_to_remove,axis=1).astype(np.float32)
 
+    print('Columns of df: ',data_pq.columns)
+
+
     # check if Log scaler
     if scaler=='Log':
         print('\nApplying Log Transformation to the data set')

@@ -1,6 +1,10 @@
 # gitignore
 
+*.png
+*.ppt
+*.pptx
 *.hdf
 *.csv
 *.hdfs
 *.parquet
+*.h5

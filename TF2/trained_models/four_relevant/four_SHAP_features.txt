@@ -1,0 +1,8 @@
+                       'c_tilde',
+                       'omega_model_planar',
+                       #'UP_delta',
+                       #'SGS_flux',
+                       'Delta_LES',
+                       #'mag_grad_c_tilde',
+                       #'mag_grad_U',
+                       'c_prime',
