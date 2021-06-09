@@ -99,8 +99,8 @@ path_to_data = '/media/max/HDD3/DNS_Data/Planar/data_junsu/pickle_log'
 
 moments = pd.read_csv(join(path_to_data,'data_mean_std.csv'),index_col=0)
 DNN_model_path = join(
-    '/home/max/Python/Data_driven_models/TF2/trained_models/DNN_Junsu_nrns_' + str(NEURONS) + '_blks_' + str(
-        RES_BLOCKS) + '_Log.h5')
+    '/home/max/Python/Data_driven_models/TF2/trained_models/DNN_Junsu_nrns_' + str(NEURONS) + '_blks_' +
+    str(RES_BLOCKS) + '_Log.h5')
 
 # elif SCALER == 'Standard':
 #     moments = pd.read_csv(join(path_to_data, 'moments_' + CASE + '.csv'), index_col=0)
@@ -282,6 +282,7 @@ lr_schedule = tf.keras.optimizers.schedules.ExponentialDecay(
     decay_rate=0.9)
 adam_optimizer = tf.keras.optimizers.Adam(learning_rate=lr_schedule)
 
+
 # function to compile a model
 def compiled_model(dim_input=len(FEATURES),dim_output=len(TARGET),neurons=NEURONS,blocks=RES_BLOCKS,loss=LOSS):
 
@@ -306,6 +307,7 @@ def compiled_model(dim_input=len(FEATURES),dim_output=len(TARGET),neurons=NEURON
     model.compile(loss=loss, optimizer=adam_optimizer, metrics=[loss])
 
     return model
+
 
 # call backs list for early stopping
 class myCallback(tf.keras.callbacks.Callback):
